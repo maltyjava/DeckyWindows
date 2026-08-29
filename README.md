@@ -105,6 +105,37 @@ Steam update breaks Decky, this bug makes recovery fail exactly when it is neede
 inside the script inherit stdin and drain the rest of the script. `scp` the file and run it with
 `-File`, stdin redirected from `/dev/null`. `deploy-remote.sh` does this.
 
+## Pinning a plugin against store updates
+
+`pin-plugin.ps1` stops Decky offering an update over a locally patched plugin, without
+renaming it:
+
+```powershell
+.\pin-plugin.ps1 -Plugin decky-steamgriddb          # pin
+.\pin-plugin.ps1 -Plugin decky-steamgriddb -Unpin   # restore
+```
+
+Decky decides an update exists in `frontend/src/store.tsx`:
+
+```js
+compare(remotePlugin?.versions?.[0]?.name, curVer, '>')
+```
+
+a strict semver "greater than" against the version read from the plugin's **`package.json`**
+(`backend/decky_loader/plugin/plugin.py`: `self.version = package_json["version"]`) — note
+*not* `plugin.json`, which carries the display name but no version. Writing a version above
+anything the store will publish makes that comparison permanently false: no update offered,
+no nag, name unchanged. The original version is recorded in `.decky-pin.json` next to it so
+the pin is reversible.
+
+**Deliberately not done with file permissions.** Decky's install path uninstalls the plugin
+*before* extracting the replacement, so a denied write mid-install can leave the plugin
+deleted rather than protected. The version pin fails safe; an ACL does not.
+
+A pin blocks *updates*, not a deliberate manual reinstall from the store. Decky must be
+restarted to re-read the version, and the Steam UI reloaded before the frontend's cached
+plugin list reflects it.
+
 ## Operational notes
 
 - **Multiple `PluginLoader_noconsole` processes are normal, not orphans.** The count is
