@@ -1,0 +1,13 @@
+# Upstream Linux release asset (ELF, useless on Windows) - kept locally as reference
+PluginLoader
+
+# Upstream source checkout, kept locally for reference
+decky-loader-3.2.6/
+
+# Superseded third-party installer, kept locally for reference
+windows-installer-old/
+
+# Build artifacts and logs
+.build/
+dist/
+*.log
