@@ -58,7 +58,7 @@ if ($Unpin) {
     Write-Json $pkgPath $pkg
     Remove-Item $markPath -Force
     "unpinned $Plugin -> version restored to $($mark.originalVersion)"
-    "restart Decky for it to re-read: schtasks /end /tn `"Decky Loader`" & schtasks /run /tn `"Decky Loader`""
+    "restart Decky for it to re-read: .\restart-decky.ps1"
     return
 }
 
@@ -85,4 +85,4 @@ Write-Json $pkgPath $pkg
 "  name            : $($pkg.name)  (unchanged)"
 "  version         : $original -> $PinnedVersion"
 "  restore with    : .\pin-plugin.ps1 -Plugin $Plugin -Unpin"
-"restart Decky for it to re-read: schtasks /end /tn `"Decky Loader`" & schtasks /run /tn `"Decky Loader`""
+"restart Decky for it to re-read: .\restart-decky.ps1"

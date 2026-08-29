@@ -53,8 +53,10 @@ case "$CMD" in
     run_ps verify.ps1 "-Traceback"
     ;;
   restart)
-    echo "==> restarting Decky (not Steam)"
-    ssh_q 'schtasks /end /tn "Decky Loader" & schtasks /run /tn "Decky Loader"'
+    # NOT schtasks /end + /run: that reports SUCCESS but leaves the loader's children
+    # alive, so the old instance keeps running and serving stale state.
+    push restart-decky.ps1
+    run_ps restart-decky.ps1
     ;;
   *)
     echo "usage: $0 [install [ref] | verify | traceback | restart]" >&2

@@ -147,8 +147,15 @@ plugin list reflects it.
   tab IDs and spins forever on `Runtime.evaluate took more than 5s / Failed to connect to tab`
   every 5s, which destabilises Steam. Restart Decky, not Steam:
   ```
-  schtasks /end /tn "Decky Loader" & schtasks /run /tn "Decky Loader"
+  .\restart-decky.ps1
   ```
+- **`schtasks /end` does not actually stop Decky.** It reports SUCCESS but leaves the loader's
+  child processes alive, so the follow-up `/run` cannot take over and the *old* instance keeps
+  running — silently serving stale plugin metadata. Observed with the task reporting
+  `LastRunTime 15:46` while the live loader process had started at `13:36`, which made a
+  correctly-applied plugin version pin look like it had failed. Always use
+  `restart-decky.ps1`: it kills the tree, refuses to start a second instance if anything
+  survived, and prints the new process start time so the restart is provable.
 - **Plugin support is partial on Windows.** Working: CSS Loader, Audio Loader, SteamGridDB,
   TabMaster, ProtonDB Badges, PlayTime, PlayCount, Web Browser, IsThereAnyDeal. Anything touching
   TDP, fan curves, or power management will not work — use MSI Center M or Handheld Companion.
