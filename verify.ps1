@@ -115,7 +115,7 @@ if ($f) {
     "  $($f.Name)"
     $stale = @(Get-Content $f.FullName | Select-String 'Assuming it failed').Count
     if ($stale -gt 3) {
-        Write-Warning "  $stale 'Assuming it failed' entries - a plugin is holding stale CEF tab IDs."
+        Write-Warning "  $stale 'Assuming it failed' entries - a CEF target is unresponsive (zombie page); run fix-css-loader.ps1"
         Write-Warning "  Restart Decky (not Steam): .\restart-decky.ps1"
     } else { "  no stale-tab retry loop ($stale hits)" }
     Get-Content $f.FullName -Tail 8 | ForEach-Object { "    $_" }

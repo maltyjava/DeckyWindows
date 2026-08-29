@@ -143,9 +143,7 @@ plugin list reflects it.
   measured at 2 with no plugins, 5 with three, 6 with four. Exactly one owns `:1337`.
 - **An unauthenticated `GET http://127.0.0.1:1337` returning 403 is healthy** — the backend is
   auth-gated. 403 means it is up.
-- **A Steam restart does not restart Decky.** CSS Loader (`SDH-CssLoader`) then holds stale CEF
-  tab IDs and spins forever on `Runtime.evaluate took more than 5s / Failed to connect to tab`
-  every 5s, which destabilises Steam. Restart Decky, not Steam:
+- **A Steam restart does not restart Decky.** Restart Decky, not Steam:
   ```
   .\restart-decky.ps1
   ```
@@ -156,6 +154,20 @@ plugin list reflects it.
   correctly-applied plugin version pin look like it had failed. Always use
   `restart-decky.ps1`: it kills the tree, refuses to start a second instance if anything
   survived, and prints the new process start time so the restart is provable.
+- **CSS Loader blinking, or a blank theme-install button, is a zombie CEF page — not a crash.**
+  Steam's UI sometimes leaves an orphaned page in its target list (typically a duplicate `Menu`)
+  that is still advertised on `:8080` but has no live execution context. CSS Loader injects into
+  every target, hits that one, burns its full 5s `Runtime.evaluate` timeout, and retries forever —
+  measured at a steady 10–15 failures per minute, indefinitely. Each cycle disrupts the CSS
+  transaction, which is what makes themes blink out and return. Decky never actually restarts.
+
+  Healthy targets answer `1+1` in 2–4 ms; the zombie never answers at all. Detect and clear it
+  with `.\fix-css-loader.ps1` (add `-Repair` to restart Steam).
+
+  Two dead ends worth not repeating: `/json/close/<id>` returns `200 Target is closing` and the
+  page **stays**, because it is too wedged to process its own close; and `steam://restartgameui`
+  does clear it but returns to desktop mode, after which — with AnyFSE managing the session —
+  Steam may exit entirely. A full restart into Big Picture is the reliable repair.
 - **Plugin support is partial on Windows.** Working: CSS Loader, Audio Loader, SteamGridDB,
   TabMaster, ProtonDB Badges, PlayTime, PlayCount, Web Browser, IsThereAnyDeal. Anything touching
   TDP, fan curves, or power management will not work — use MSI Center M or Handheld Companion.
