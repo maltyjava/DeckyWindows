@@ -11,14 +11,27 @@ non-domain machine. This repo automates the whole path and patches around both b
 
 ## Usage
 
-From a machine that can `ssh claw`:
+### On the handheld: double-click `installer.bat`
+
+Copy this whole folder to the handheld and double-click **`installer.bat`**. It asks for
+administrator rights via UAC, installs the toolchain, builds Decky, installs it, and runs the
+verifier. Expect 10–20 minutes on a first run.
+
+`installer.bat` must stay next to `bootstrap.ps1` and `verify.ps1` — it runs the local copies
+rather than downloading them, since this repo is private.
+
+To pin a version, drag a tag onto the file or run `installer.bat v3.2.6` from a prompt.
+
+### Remotely over SSH
 
 ```bash
 ./deploy-remote.sh            # toolchain + build + install + verify
 ./deploy-remote.sh verify     # health check only
+./deploy-remote.sh traceback  # startup traceback when :1337 will not bind
+./deploy-remote.sh restart    # restart Decky (not Steam)
 ```
 
-Or run directly on the handheld, in an **elevated** PowerShell:
+### Directly, in an elevated PowerShell
 
 ```powershell
 .\bootstrap.ps1               # latest upstream stable
@@ -27,6 +40,10 @@ Or run directly on the handheld, in an **elevated** PowerShell:
 ```
 
 `bootstrap.ps1` is idempotent — safe to re-run to recover after a Steam update breaks Decky.
+
+> **Exit codes are not a reliable success signal.** git and PyInstaller write to stderr, which
+> surfaces as a non-zero exit even on a clean build. Trust the verifier output and the installed
+> state, not the return code.
 
 ## Why it is built this way
 
