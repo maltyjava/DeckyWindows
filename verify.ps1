@@ -23,7 +23,7 @@ $procs = @(Get-Process PluginLoader, PluginLoader_noconsole -ErrorAction Silentl
 if ($procs) { $procs | Sort-Object StartTime | ForEach-Object {
         "  $($_.ProcessName) pid=$($_.Id) start=$($_.StartTime.ToString('HH:mm:ss'))" } }
 else { '  none running' }
-"  total = $($procs.Count)   (5 from one task start is normal)"
+"  total = $($procs.Count)   (expect 2 + 1 per installed plugin)"
 
 Head 'backend :1337'
 $c = Get-NetTCPConnection -LocalPort 1337 -State Listen -ErrorAction SilentlyContinue

@@ -67,10 +67,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%~dp0*.ps
 rem ---- install ---------------------------------------------------------------
 echo  [1/2] Building and installing Decky Loader...
 echo.
+rem Tee-Object keeps the live progress visible while also writing the log, so a
+rem failed run leaves something to read after the window is gone.
 if "%REF%"=="" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bootstrap.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%~dp0bootstrap.ps1' *>&1 | Tee-Object -FilePath '%LOG%'"
 ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bootstrap.ps1" -Ref "%REF%"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%~dp0bootstrap.ps1' -Ref '%REF%' *>&1 | Tee-Object -FilePath '%LOG%'"
 )
 set "RC=%ERRORLEVEL%"
 
@@ -79,7 +81,7 @@ echo.
 echo  [2/2] Verifying...
 echo.
 if exist "%~dp0verify.ps1" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verify.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%~dp0verify.ps1' *>&1 | Tee-Object -FilePath '%LOG%' -Append"
 ) else (
     echo  ^(verify.ps1 not found - skipping^)
 )

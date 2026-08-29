@@ -222,7 +222,7 @@ Start-Sleep -Seconds 15
 
 $procs = @(Get-Process PluginLoader_noconsole -ErrorAction SilentlyContinue)
 $bound = [bool](Get-NetTCPConnection -LocalPort 1337 -State Listen -ErrorAction SilentlyContinue)
-Note "processes: $($procs.Count) (5 is normal)"
+Note "processes: $($procs.Count) (expect 2 + 1 per installed plugin)"
 Note "port 1337: $(if ($bound) { 'LISTENING' } else { 'NOT LISTENING' })"
 
 if (-not $bound) {

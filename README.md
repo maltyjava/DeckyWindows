@@ -107,8 +107,9 @@ inside the script inherit stdin and drain the rest of the script. `scp` the file
 
 ## Operational notes
 
-- **5 `PluginLoader_noconsole` processes from one task start is normal** (PyInstaller bootloader
-  plus multiprocessing workers), not orphans. Exactly one owns `:1337`.
+- **Multiple `PluginLoader_noconsole` processes are normal, not orphans.** The count is
+  `2 + 1 per installed plugin` (PyInstaller bootloader and child, plus one worker per plugin) —
+  measured at 2 with no plugins, 5 with three, 6 with four. Exactly one owns `:1337`.
 - **An unauthenticated `GET http://127.0.0.1:1337` returning 403 is healthy** — the backend is
   auth-gated. 403 means it is up.
 - **A Steam restart does not restart Decky.** CSS Loader (`SDH-CssLoader`) then holds stale CEF
