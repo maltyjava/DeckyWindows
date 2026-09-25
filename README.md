@@ -117,8 +117,8 @@ venv is pre-seeded with the real 3.11 so upstream's `build.ps1` never invokes ba
 ### 3. `$env:USERDOMAIN` is `WORKGROUP` over SSH
 
 Not the machine name. `Register-DeckyTask` in the wrapper's `lib\common.ps1` builds its principal
-as `"$env:USERDOMAIN\$env:USERNAME"`, which on a non-domain machine is `WORKGROUP\youruser` — an
-account with no SID:
+as `"$env:USERDOMAIN\$env:USERNAME"`, which on a non-domain machine is `WORKGROUP\youruser` —
+an account with no SID:
 
 ```
 Register-ScheduledTask : No mapping between account names and security IDs was done.

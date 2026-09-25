@@ -99,7 +99,7 @@ jobs:
         if: steps.check.outputs.skip != 'True'
         working-directory: ./decky/frontend
         run: |
-          npm i -g pnpm@9
+          npm i -g pnpm
           pnpm i --frozen-lockfile
 
       - name: Build frontend
