@@ -11,3 +11,6 @@ windows-installer-old/
 .build/
 dist/
 *.log
+
+# Built by CI and attached to releases, not tracked in git
+install_decky.exe

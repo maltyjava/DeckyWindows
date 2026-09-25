@@ -1,0 +1,189 @@
+name: Build Decky for Windows
+
+# Upstream builds Windows binaries in CI but never attaches them to releases - only the
+# Linux "PluginLoader" is published. That is also why Decky's in-app updater cannot work
+# on Windows: updater.py looks for an asset named exactly "PluginLoader.exe".
+#
+# This workflow builds those missing binaries from the newest upstream stable release and
+# publishes them here, together with install_decky.exe, as a release tagged decky-<version>.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Decky tag to build (blank = newest upstream stable)'
+        required: false
+        type: string
+      force:
+        description: 'Rebuild even if a release for that version already exists'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 6 * * *'   # daily, to pick up new Decky releases
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Resolve target Decky version
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = '${{ inputs.ref }}'
+          if ([string]::IsNullOrWhiteSpace($ref)) {
+            $ref = (Invoke-RestMethod 'https://api.github.com/repos/SteamDeckHomebrew/decky-loader/releases/latest' `
+                     -Headers @{ 'User-Agent' = 'DeckyWindows-CI' }).tag_name
+          }
+          if ($ref -match '^[0-9]') { $ref = "v$ref" }
+          "ref=$ref"       | Out-File $env:GITHUB_OUTPUT -Append
+          "tag=decky-$ref" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Target: $ref  ->  release decky-$ref"
+
+      - name: Skip if already built
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exists = $false
+          try {
+            gh release view '${{ steps.ver.outputs.tag }}' --repo $env:GITHUB_REPOSITORY *> $null
+            if ($LASTEXITCODE -eq 0) { $exists = $true }
+          } catch { }
+          $force = '${{ inputs.force }}' -eq 'true'
+          $skip = ($exists -and -not $force)
+          "skip=$skip" | Out-File $env:GITHUB_OUTPUT -Append
+          if ($skip) { Write-Host "Release already exists - nothing to do." }
+
+      - name: Checkout decky-loader
+        if: steps.check.outputs.skip != 'True'
+        uses: actions/checkout@v4
+        with:
+          repository: SteamDeckHomebrew/decky-loader
+          ref: ${{ steps.ver.outputs.ref }}
+          path: decky
+
+      - name: Set up NodeJS 20
+        if: steps.check.outputs.skip != 'True'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Python 3.11.7
+        if: steps.check.outputs.skip != 'True'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.7'
+
+      - name: Install Poetry
+        if: steps.check.outputs.skip != 'True'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: false
+
+      - name: Install Python dependencies
+        if: steps.check.outputs.skip != 'True'
+        working-directory: ./decky/backend
+        run: |
+          poetry self add "poetry-dynamic-versioning[plugin]"
+          poetry install --no-interaction
+
+      - name: Install JS dependencies
+        if: steps.check.outputs.skip != 'True'
+        working-directory: ./decky/frontend
+        run: |
+          npm i -g pnpm@9
+          pnpm i --frozen-lockfile
+
+      - name: Build frontend
+        if: steps.check.outputs.skip != 'True'
+        working-directory: ./decky/frontend
+        run: pnpm run build
+
+      - name: Build backend
+        if: steps.check.outputs.skip != 'True'
+        working-directory: ./decky/backend
+        run: |
+          poetry dynamic-versioning
+          poetry run pyinstaller pyinstaller.spec
+
+      - name: Build backend (noconsole)
+        if: steps.check.outputs.skip != 'True'
+        working-directory: ./decky/backend
+        shell: pwsh
+        run: |
+          $env:DECKY_NOCONSOLE = 1
+          poetry run pyinstaller pyinstaller.spec
+
+      - name: Compile install_decky.exe
+        if: steps.check.outputs.skip != 'True'
+        shell: pwsh
+        run: |
+          Install-Module ps2exe -Scope CurrentUser -Force -AllowClobber
+          Import-Module ps2exe
+          Invoke-PS2EXE -InputFile  './install-decky.ps1' `
+                        -OutputFile './install_decky.exe' `
+                        -title 'Decky Loader Installer' `
+                        -description 'Installs Decky Loader on Windows' `
+                        -company 'DeckyWindows' -product 'Decky Loader Installer' `
+                        -version '1.0.0' -requireAdmin
+
+      - name: Verify artifacts
+        if: steps.check.outputs.skip != 'True'
+        shell: pwsh
+        run: |
+          $files = @(
+            './decky/backend/dist/PluginLoader.exe',
+            './decky/backend/dist/PluginLoader_noconsole.exe',
+            './install_decky.exe'
+          )
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) { throw "missing artifact: $f" }
+            '{0,-52} {1,8:N1} MB' -f $f, ((Get-Item $f).Length / 1MB)
+          }
+
+      - name: Publish release
+        if: steps.check.outputs.skip != 'True'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          $ref = '${{ steps.ver.outputs.ref }}'
+          $notes = @"
+Decky Loader **$ref** built for Windows.
+
+Upstream publishes only the Linux ``PluginLoader`` binary, so these Windows builds do not
+exist anywhere else - and that is also why Decky's in-app updater does nothing on Windows
+(``updater.py`` looks for an asset named exactly ``PluginLoader.exe``).
+
+### Install
+Download **install_decky.exe** and run it. It will offer an install location, fetch these
+prebuilt binaries, register autostart and enable Steam's CEF debugging flag.
+
+Re-run the installer to update - it is the only update path on Windows.
+
+### Files
+| file | purpose |
+|---|---|
+| ``install_decky.exe`` | the installer - this is the one you want |
+| ``PluginLoader.exe`` | Decky backend, console build (for diagnostics) |
+| ``PluginLoader_noconsole.exe`` | Decky backend, what autostart runs |
+
+Built from ``SteamDeckHomebrew/decky-loader`` at ``$ref`` with Python 3.11.7 / Node 20,
+matching upstream's own ``build-win.yml``.
+"@
+          gh release create $tag `
+            './decky/backend/dist/PluginLoader.exe' `
+            './decky/backend/dist/PluginLoader_noconsole.exe' `
+            './install_decky.exe' `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "Decky Loader $ref (Windows)" `
+            --notes $notes

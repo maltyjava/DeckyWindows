@@ -11,16 +11,56 @@ non-domain machine. This repo automates the whole path and patches around both b
 
 ## Usage
 
-### On the handheld: double-click `installer.bat`
+### Download `install_decky.exe` from [Releases](../../releases) — start here
 
-Copy this whole folder to the handheld and double-click **`installer.bat`**. It asks for
-administrator rights via UAC, installs the toolchain, builds Decky, installs it, and runs the
-verifier. Expect 10–20 minutes on a first run.
+One file, one run, any Windows machine. It prompts for UAC, asks where to install, fetches
+Decky and sets everything up.
 
-`installer.bat` must stay next to `bootstrap.ps1` and `verify.ps1` — it runs the local copies
-rather than downloading them, since this repo is private.
+```
+install_decky.exe                                  # prompts for location (default C:\Decky)
+install_decky.exe -Path D:\Decky                   # non-interactive location
+install_decky.exe -Path D:\Decky -Ref v3.2.9 -Yes  # fully unattended, pinned version
+install_decky.exe -ForceBuild                      # ignore prebuilts, build from source
+```
 
-To pin a version, drag a tag onto the file or run `installer.bat v3.2.6` from a prompt.
+It prefers the **prebuilt `PluginLoader.exe`** published alongside it and falls back to
+**building from source** (installing Python 3.11, Node and Git via winget) when no prebuilt
+matches the newest upstream release. Prebuilt takes under a minute; a source build takes
+10–20 minutes.
+
+**Re-run it to update.** That is not a convenience — see below.
+
+### Decky cannot update itself on Windows
+
+`backend/decky_loader/updater.py` looks for a release asset named exactly `PluginLoader.exe`:
+
+```python
+download_filename = "PluginLoader" if ON_LINUX else "PluginLoader.exe"
+for x in self.remoteVer["assets"]:
+    if x["name"] == download_filename: ...
+if download_url == None:
+    raise Exception("Download url not found")
+```
+
+Upstream only ever publishes the Linux `PluginLoader`, so on Windows that lookup finds
+nothing and throws. The source repo is hardcoded to `SteamDeckHomebrew/decky-loader`, so it
+cannot be redirected at this repo's releases either. **The in-app updater will always
+silently fail on Windows.** Running the installer again is the update path.
+
+### Install location
+
+Decky's own override is honoured rather than worked around
+(`localplatform/localplatformwin.py`):
+
+```python
+path = os.getenv("UNPRIVILEGED_PATH")
+if path == None:
+    path = os.getenv("PRIVILEGED_PATH", os.path.join(os.path.expanduser("~"), "homebrew"))
+```
+
+The installer sets `UNPRIVILEGED_PATH` machine-wide to your chosen path, so nothing is
+created in your home directory. On Windows privileged and unprivileged paths are the same,
+so that one variable covers everything.
 
 ### Remotely over SSH
 
