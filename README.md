@@ -18,10 +18,23 @@ Decky and sets everything up.
 
 ```
 install_decky.exe                                  # prompts for location (default C:\Decky)
+install_decky.exe -Prerelease                      # newest prerelease instead of stable
 install_decky.exe -Path D:\Decky                   # non-interactive location
 install_decky.exe -Path D:\Decky -Ref v3.2.9 -Yes  # fully unattended, pinned version
 install_decky.exe -ForceBuild                      # ignore prebuilts, build from source
 ```
+
+### Stable or prerelease?
+
+CI builds **both** channels daily and publishes each as its own release, so both are always
+available as prebuilt binaries. Use stable unless a Steam client update has broken something:
+when Steam changes its internal UI, the fix usually lands in a prerelease first. That is the
+same reason prereleases matter on the Steam Deck, and it applies equally on Windows — Steam's
+UI is the same code on both.
+
+The prerelease leg only builds when the newest prerelease is genuinely *ahead* of the newest
+stable, compared on the base version so that `v3.2.10-pre1` correctly outranks `v3.2.9`.
+Otherwise it is skipped as redundant.
 
 It prefers the **prebuilt `PluginLoader.exe`** published alongside it and falls back to
 **building from source** (installing Python 3.11, Node and Git via winget) when no prebuilt

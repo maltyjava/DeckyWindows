@@ -20,7 +20,11 @@
     Where to install. Default C:\Decky. Decky is told about it via the UNPRIVILEGED_PATH
     environment variable, which is the supported override in localplatformwin.py.
 .PARAMETER Ref
-    Decky release tag to install, e.g. v3.2.9. Default: newest upstream stable.
+    Decky release tag to install, e.g. v3.2.9. Default: newest of the chosen channel.
+.PARAMETER Prerelease
+    Install the newest upstream prerelease rather than the newest stable. Worth reaching for
+    when a Steam client update has broken the UI: the fix usually appears in a prerelease
+    first, exactly as it does on the Steam Deck.
 .PARAMETER ForceBuild
     Always build from source, even if a matching prebuilt binary exists.
 .PARAMETER KeepBuild
@@ -36,6 +40,7 @@
 param(
     [string]$Path,
     [string]$Ref,
+    [switch]$Prerelease,
     [switch]$ForceBuild,
     [switch]$KeepBuild,
     [switch]$Yes
@@ -112,6 +117,7 @@ if (-not (Test-Admin)) {
     $argList = @()
     if ($Path)       { $argList += @('-Path', "`"$Path`"") }
     if ($Ref)        { $argList += @('-Ref', $Ref) }
+    if ($Prerelease) { $argList += '-Prerelease' }
     if ($ForceBuild) { $argList += '-ForceBuild' }
     if ($KeepBuild)  { $argList += '-KeepBuild' }
     if ($Yes)        { $argList += '-Yes' }
@@ -168,10 +174,19 @@ New-Item -ItemType Directory -Force -Path $Path | Out-Null
 # ---------------------------------------------------------------- target version
 Step 'Resolving Decky version'
 if (-not $Ref) {
-    $Ref = (Invoke-RestMethod "https://api.github.com/repos/$UPSTREAM/releases/latest" -Headers $UA -TimeoutSec 30).tag_name
+    if ($Prerelease) {
+        # When a Steam client update breaks the UI, the fix usually lands in a prerelease
+        # first - the same reason prereleases matter on the Steam Deck.
+        $all = Invoke-RestMethod "https://api.github.com/repos/$UPSTREAM/releases?per_page=30" -Headers $UA -TimeoutSec 30
+        $pre = $all | Where-Object { $_.prerelease } | Select-Object -First 1
+        if (-not $pre) { throw 'no prerelease is currently published upstream' }
+        $Ref = $pre.tag_name
+    } else {
+        $Ref = (Invoke-RestMethod "https://api.github.com/repos/$UPSTREAM/releases/latest" -Headers $UA -TimeoutSec 30).tag_name
+    }
 }
 if ($Ref -match '^[0-9]') { $Ref = "v$Ref" }
-Ok "target: $Ref"
+Ok "target: $Ref  ($(if ($Prerelease) { 'prerelease' } else { 'stable' }) channel)"
 
 # ---------------------------------------------------------------- try prebuilt
 $gotPrebuilt = $false

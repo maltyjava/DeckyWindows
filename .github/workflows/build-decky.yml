@@ -4,14 +4,16 @@ name: Build Decky for Windows
 # Linux "PluginLoader" is published. That is also why Decky's in-app updater cannot work
 # on Windows: updater.py looks for an asset named exactly "PluginLoader.exe".
 #
-# This workflow builds those missing binaries from the newest upstream stable release and
-# publishes them here, together with install_decky.exe, as a release tagged decky-<version>.
+# This builds the missing Windows binaries for BOTH channels - newest stable and newest
+# prerelease - and publishes each as its own release tagged decky-<version>, together with
+# install_decky.exe. Prereleases matter on Windows for the same reason they do on Linux:
+# when a Steam client update breaks the UI, the fix usually lands in a prerelease first.
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Decky tag to build (blank = newest upstream stable)'
+        description: 'Build this exact Decky tag (blank = newest of each channel)'
         required: false
         type: string
       force:
@@ -28,94 +30,135 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      # Serialised: both legs can resolve to the same tag, and parallel runs would race
+      # to create the same release.
+      max-parallel: 1
+      matrix:
+        channel: [stable, prerelease]
+
     steps:
       - name: Checkout this repo
         uses: actions/checkout@v4
 
-      - name: Resolve target Decky version
-        id: ver
-        shell: pwsh
-        run: |
-          $ref = '${{ inputs.ref }}'
-          if ([string]::IsNullOrWhiteSpace($ref)) {
-            $ref = (Invoke-RestMethod 'https://api.github.com/repos/SteamDeckHomebrew/decky-loader/releases/latest' `
-                     -Headers @{ 'User-Agent' = 'DeckyWindows-CI' }).tag_name
-          }
-          if ($ref -match '^[0-9]') { $ref = "v$ref" }
-          "ref=$ref"       | Out-File $env:GITHUB_OUTPUT -Append
-          "tag=decky-$ref" | Out-File $env:GITHUB_OUTPUT -Append
-          Write-Host "Target: $ref  ->  release decky-$ref"
-
-      - name: Skip if already built
-        id: check
+      - name: Resolve target and decide whether to build
+        id: plan
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $exists = $false
-          try {
-            gh release view '${{ steps.ver.outputs.tag }}' --repo $env:GITHUB_REPOSITORY *> $null
-            if ($LASTEXITCODE -eq 0) { $exists = $true }
-          } catch { }
-          $force = '${{ inputs.force }}' -eq 'true'
-          $skip = ($exists -and -not $force)
+          $channel  = '${{ matrix.channel }}'
+          $explicit = '${{ inputs.ref }}'
+          $force    = '${{ inputs.force }}' -eq 'true'
+          $headers  = @{ 'User-Agent' = 'DeckyWindows-CI' }
+          $api      = 'https://api.github.com/repos/SteamDeckHomebrew/decky-loader/releases'
+
+          function BaseVersion([string]$tag) {
+            # v3.2.10-pre1 -> 3.2.10 ; so 3.2.10-pre1 sorts above stable 3.2.9
+            $v = $tag.TrimStart('v') -replace '-(pre|rc|beta|alpha).*$', ''
+            try { return [version]$v } catch { return [version]'0.0.0' }
+          }
+
+          $skip   = $false
+          $ref    = ''
+          $reason = ''
+
+          if (-not [string]::IsNullOrWhiteSpace($explicit)) {
+            # An explicit tag is a single build - run it on the stable leg only.
+            if ($channel -ne 'stable') { $skip = $true; $reason = 'explicit ref builds once' }
+            $ref = $explicit
+          }
+          elseif ($channel -eq 'stable') {
+            $ref = (Invoke-RestMethod "$api/latest" -Headers $headers).tag_name
+          }
+          else {
+            $all = Invoke-RestMethod "$api`?per_page=30" -Headers $headers
+            $pre = $all | Where-Object { $_.prerelease } | Select-Object -First 1
+            if (-not $pre) {
+              $skip = $true; $reason = 'no prerelease published'
+            } else {
+              $ref = $pre.tag_name
+              $latestStable = (Invoke-RestMethod "$api/latest" -Headers $headers).tag_name
+              # Only worth building a prerelease that is actually ahead of stable.
+              if ((BaseVersion $ref) -le (BaseVersion $latestStable)) {
+                $skip = $true
+                $reason = "prerelease $ref is not ahead of stable $latestStable"
+              }
+            }
+          }
+
+          if (-not $skip) {
+            if ($ref -match '^[0-9]') { $ref = "v$ref" }
+            $tag = "decky-$ref"
+            gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+            if ($LASTEXITCODE -eq 0 -and -not $force) {
+              $skip = $true; $reason = "$tag already published"
+            }
+            "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
+          }
+
+          "ref=$ref"   | Out-File $env:GITHUB_OUTPUT -Append
           "skip=$skip" | Out-File $env:GITHUB_OUTPUT -Append
-          if ($skip) { Write-Host "Release already exists - nothing to do." }
+          "pre=$($channel -eq 'prerelease')" | Out-File $env:GITHUB_OUTPUT -Append
+
+          if ($skip) { Write-Host "[$channel] skipping - $reason" }
+          else       { Write-Host "[$channel] building $ref" }
 
       - name: Checkout decky-loader
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         uses: actions/checkout@v4
         with:
           repository: SteamDeckHomebrew/decky-loader
-          ref: ${{ steps.ver.outputs.ref }}
+          ref: ${{ steps.plan.outputs.ref }}
           path: decky
 
       - name: Set up NodeJS 20
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Set up Python 3.11.7
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.7'
 
       - name: Install Poetry
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         uses: snok/install-poetry@v1
         with:
           virtualenvs-create: false
 
       - name: Install Python dependencies
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/backend
         run: |
           poetry self add "poetry-dynamic-versioning[plugin]"
           poetry install --no-interaction
 
       - name: Install JS dependencies
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/frontend
         run: |
           npm i -g pnpm
           pnpm i --frozen-lockfile
 
       - name: Build frontend
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/frontend
         run: pnpm run build
 
       - name: Build backend
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/backend
         run: |
           poetry dynamic-versioning
           poetry run pyinstaller pyinstaller.spec
 
       - name: Build backend (noconsole)
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/backend
         shell: pwsh
         run: |
@@ -123,7 +166,7 @@ jobs:
           poetry run pyinstaller pyinstaller.spec
 
       - name: Compile install_decky.exe
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         shell: pwsh
         run: |
           Install-Module ps2exe -Scope CurrentUser -Force -AllowClobber
@@ -136,39 +179,51 @@ jobs:
                         -version '1.0.0' -requireAdmin
 
       - name: Verify artifacts
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         shell: pwsh
         run: |
-          $files = @(
+          foreach ($f in @(
             './decky/backend/dist/PluginLoader.exe',
             './decky/backend/dist/PluginLoader_noconsole.exe',
-            './install_decky.exe'
-          )
-          foreach ($f in $files) {
+            './install_decky.exe')) {
             if (-not (Test-Path $f)) { throw "missing artifact: $f" }
             '{0,-52} {1,8:N1} MB' -f $f, ((Get-Item $f).Length / 1MB)
           }
 
       - name: Publish release
-        if: steps.check.outputs.skip != 'True'
+        if: steps.plan.outputs.skip != 'True'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ steps.ver.outputs.tag }}'
-          $ref = '${{ steps.ver.outputs.ref }}'
+          $tag = '${{ steps.plan.outputs.tag }}'
+          $ref = '${{ steps.plan.outputs.ref }}'
+          $pre = '${{ steps.plan.outputs.pre }}' -eq 'True'
+          $channelName = if ($pre) { 'prerelease' } else { 'stable' }
+
           $notes = @"
-Decky Loader **$ref** built for Windows.
+Decky Loader **$ref** ($channelName) built for Windows.
 
 Upstream publishes only the Linux ``PluginLoader`` binary, so these Windows builds do not
 exist anywhere else - and that is also why Decky's in-app updater does nothing on Windows
 (``updater.py`` looks for an asset named exactly ``PluginLoader.exe``).
 
 ### Install
-Download **install_decky.exe** and run it. It will offer an install location, fetch these
-prebuilt binaries, register autostart and enable Steam's CEF debugging flag.
+Download **install_decky.exe** and run it. It offers an install location, fetches these
+prebuilt binaries, registers autostart and enables Steam's CEF debugging flag.
+
+``````
+install_decky.exe                 # newest stable
+install_decky.exe -Prerelease     # newest prerelease
+install_decky.exe -Path D:\Decky  # choose where it goes
+``````
 
 Re-run the installer to update - it is the only update path on Windows.
+
+### Which channel?
+Use **stable** unless a Steam client update has broken something. When Steam changes its
+internal UI, the fix usually lands in a prerelease first - that is what this channel is for,
+and it is the same reason prereleases matter on the Steam Deck.
 
 ### Files
 | file | purpose |
@@ -180,10 +235,15 @@ Re-run the installer to update - it is the only update path on Windows.
 Built from ``SteamDeckHomebrew/decky-loader`` at ``$ref`` with Python 3.11.7 / Node 20,
 matching upstream's own ``build-win.yml``.
 "@
-          gh release create $tag `
-            './decky/backend/dist/PluginLoader.exe' `
-            './decky/backend/dist/PluginLoader_noconsole.exe' `
-            './install_decky.exe' `
-            --repo $env:GITHUB_REPOSITORY `
-            --title "Decky Loader $ref (Windows)" `
-            --notes $notes
+
+          $args = @(
+            $tag,
+            './decky/backend/dist/PluginLoader.exe',
+            './decky/backend/dist/PluginLoader_noconsole.exe',
+            './install_decky.exe',
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--title', "Decky Loader $ref (Windows, $channelName)",
+            '--notes', $notes
+          )
+          if ($pre) { $args += '--prerelease' }
+          gh release create @args
