@@ -92,7 +92,12 @@ jobs:
             if ($ref -match '^[0-9]') { $ref = "v$ref" }
             $tag = "decky-$ref"
             gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-            if ($LASTEXITCODE -eq 0 -and -not $force) {
+            # A missing release is the normal case and exits non-zero. Capture it, then
+            # clear $LASTEXITCODE: pwsh propagates it as the step's exit code otherwise,
+            # failing the step even though nothing went wrong.
+            $alreadyPublished = ($LASTEXITCODE -eq 0)
+            $global:LASTEXITCODE = 0
+            if ($alreadyPublished -and -not $force) {
               $skip = $true; $reason = "$tag already published"
             }
             "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
@@ -104,6 +109,8 @@ jobs:
 
           if ($skip) { Write-Host "[$channel] skipping - $reason" }
           else       { Write-Host "[$channel] building $ref" }
+
+          exit 0
 
       - name: Checkout decky-loader
         if: steps.plan.outputs.skip != 'True'
