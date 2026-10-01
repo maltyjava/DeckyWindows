@@ -138,6 +138,27 @@ jobs:
         with:
           virtualenvs-create: false
 
+      - name: Locate Poetry and put it on PATH
+        if: steps.plan.outputs.skip != 'True'
+        shell: pwsh
+        run: |
+          # snok/install-poetry does not leave poetry on PATH for later steps on Windows.
+          # Upstream's build-win.yml hardcodes the runneradmin path; resolve it instead so
+          # this does not depend on the runner's username.
+          $candidates = @(
+            (Join-Path $env:USERPROFILE '.local\bin\poetry.exe'),
+            (Join-Path $env:USERPROFILE '.local\bin\poetry'),
+            (Join-Path $env:APPDATA   'Python\Scripts\poetry.exe')
+          )
+          $p = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $p) {
+            $g = Get-Command poetry -ErrorAction SilentlyContinue
+            if ($g) { $p = $g.Source }
+          }
+          if (-not $p) { throw "poetry not found after install. Looked in: $($candidates -join '; ')" }
+          Write-Host "poetry: $p"
+          (Split-Path $p -Parent) | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
       - name: Install Python dependencies
         if: steps.plan.outputs.skip != 'True'
         working-directory: ./decky/backend
