@@ -21,8 +21,6 @@ on:
         required: false
         type: boolean
         default: false
-  schedule:
-    - cron: '0 6 * * *'   # daily, to pick up new Decky releases
 
 permissions:
   contents: write
